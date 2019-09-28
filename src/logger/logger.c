@@ -13,12 +13,14 @@
 static bool isTerminate;
 static int logFile;
 static int bufferDataArraySize;
+static int nextFreeCell;
 static bufferData **bufferDataArray;
 static pthread_mutex_t lock;
 static pthread_t loggerThread;
 
 static bool createDataFile();
 static void* runLogger();
+static bufferData* getBuffer();
 
 void initBufferData(bufferData *bd) {
 	bd->bufSize = BUFFSIZE;
@@ -116,38 +118,55 @@ void terminateLogger() {
 	pthread_join(loggerThread, NULL);
 }
 
-bufferData* getBufferData() {
-	static int nextFreeCell = 0;
-	bufferData *bd;
-
+void registerThread() {
 	pthread_mutex_lock(&lock);
 
 	//TODO: return an error if trying to add more thread buffers than allowed
 	if (bufferDataArraySize == nextFreeCell) {
-		return NULL;
+//		return NULL;
 	}
 
-	bd = bufferDataArray[nextFreeCell++];
+	bufferDataArray[nextFreeCell++]->tid = pthread_self();
 
 	pthread_mutex_unlock(&lock);
-
-	return bd;
 }
 
-bool logMessage(bufferData *bd, char *msg) {
+static bufferData* getBuffer() {
+	int i;
+	bufferData *bd;
+	pthread_t thrd = pthread_self();
+
+	for (i = 0; i < nextFreeCell; ++i) {
+		bd = bufferDataArray[i];
+		if (bd->tid == thrd) {
+			return bd;
+		}
+	}
+
+	printf("how???\n");
+	return NULL;
+}
+
+bool logMessage(char *msg) {
 	int msgLen;
 	int lenToBufEnd;
-	atomic_int lastWrite;
 	int lastRead;
+	atomic_int lastWrite;
+	bufferData *bd;
 
 	//TODO: implement rotating file write
+	bd = getBuffer();
+	if (NULL == bd) {
+		return STATUS_FAILURE;
+	}
+
 	msgLen = strlen(msg);
 	__atomic_load(&bd->lastRead, &lastRead, __ATOMIC_SEQ_CST);
 	lastWrite = bd->lastWrite;
 	lenToBufEnd = bd->bufSize - lastWrite;
 
 	/* Handle 2 cases of potential data override */
-	if (lastWrite < lastRead && ((lastWrite + msgLen) >= lastRead)) {
+	if (lastWrite <= lastRead && ((lastWrite + msgLen) >= lastRead)) {
 		/* Next write will over shot past lastRead */
 		/* Shouldn't happen - increase buffer size */
 		__atomic_store_n(&bd->isWaiting, true, __ATOMIC_SEQ_CST);
@@ -155,7 +174,7 @@ bool logMessage(bufferData *bd, char *msg) {
 		sem_wait(&bd->sem);
 	} else if (msgLen >= lenToBufEnd) {
 		int bytesRemaining = msgLen - lenToBufEnd;
-		if (bytesRemaining > lastRead) {
+		if (bytesRemaining >= lastRead) {
 			/* Wrap around will over shot past lastRead */
 			/* Shouldn't happen - increase buffer size */
 			__atomic_store_n(&bd->isWaiting, true, __ATOMIC_SEQ_CST);
@@ -164,7 +183,7 @@ bool logMessage(bufferData *bd, char *msg) {
 		}
 	}
 
-	if (lenToBufEnd > msgLen) {
+	if (lenToBufEnd >= msgLen) {
 		/* There is enough space at the end of the buffer */
 		memcpy(bd->buf + lastWrite, msg, msgLen);
 		__atomic_store_n(&bd->lastWrite, lastWrite + msgLen, __ATOMIC_SEQ_CST);

@@ -30,14 +30,15 @@ typedef struct bufferData {
 	atomic_int lastRead;
 	atomic_int lastWrite;
 	int bufSize;
-	sem_t sem;
 	char* buf;
+	pthread_t tid;
+	sem_t sem;
 } bufferData;
 
 void initBufferData(bufferData* bd);
 bool initLogger(int threadsNum);
-bufferData* getBufferData();
-bool logMessage(bufferData* bufferData, char* msg);
+void registerThread();
+bool logMessage(char* msg);
 void terminateLogger();
 
 #endif /* LOGGER */
