@@ -21,6 +21,7 @@ static pthread_t loggerThread;
 static bool createDataFile();
 static void* runLogger();
 static bufferData* getBuffer();
+inline static void postWrite(bufferData *bd, atomic_int lastWrite);
 
 void initBufferData(bufferData *bd) {
 	bd->bufSize = BUFFSIZE;
@@ -65,7 +66,6 @@ static bool createDataFile() {
 }
 
 static void* runLogger() {
-	atomic_bool isWaiting;
 	atomic_int lastWrite;
 	int lastRead;
 	int lenToBufEnd;
@@ -85,29 +85,39 @@ static void* runLogger() {
 				if (0 < dataLen) {
 					/* Sequential write */
 					write(logFile, bd->buf + lastRead, dataLen);
+
+					postWrite(bd, lastWrite);
 				} else if (0 > dataLen) {
 					/* Wrap around write */
 					lenToBufEnd = bd->bufSize - lastRead;
 					write(logFile, bd->buf + lastRead, lenToBufEnd);
 					write(logFile, bd->buf, lastWrite);
-				}
-				/* Flush data to disk */
-				fsync(logFile);
-				/* Update new lastRead */
-				__atomic_store_n(&bd->lastRead, lastWrite,
-				__ATOMIC_SEQ_CST);
 
-				/* Check if worker thread is waiting on semaphore and
-				 * only release after all data in the buffer has been written to file*/
-				__atomic_load(&bd->isWaiting, &isWaiting, __ATOMIC_SEQ_CST);
-				if ((true == isWaiting) && (lastRead == lastWrite)) {
-					__atomic_store_n(&bd->isWaiting, false, __ATOMIC_SEQ_CST);
-					sem_post(&bd->sem);
+					postWrite(bd, lastWrite);
 				}
 			}
 		}
 	}
 	return NULL;
+}
+
+inline static void postWrite(bufferData *bd, atomic_int lastWrite) {
+	atomic_bool isWaiting;
+	int lastRead;
+
+	/* Update new lastRead */
+	__atomic_store_n(&bd->lastRead, lastWrite,
+	__ATOMIC_SEQ_CST);
+
+	/* Check if worker thread is waiting on semaphore and
+	 * only release after all data in the buffer has been written to file*/
+	__atomic_load(&bd->isWaiting, &isWaiting, __ATOMIC_SEQ_CST);
+	lastRead = bd->lastRead;
+	if ((true == isWaiting) && (lastRead == lastWrite)) {
+		__atomic_store_n(&bd->isWaiting, false,
+		__ATOMIC_SEQ_CST);
+		sem_post(&bd->sem);
+	}
 }
 
 /* Terminate the logger thread and release resources */
@@ -154,7 +164,7 @@ bool logMessage(char *msg) {
 	atomic_int lastWrite;
 	bufferData *bd;
 
-	//TODO: implement rotating file write
+//TODO: implement rotating file write
 	bd = getBuffer();
 	if (NULL == bd) {
 		return STATUS_FAILURE;
@@ -166,13 +176,13 @@ bool logMessage(char *msg) {
 	lenToBufEnd = bd->bufSize - lastWrite;
 
 	/* Handle 2 cases of potential data override */
-	if (lastWrite <= lastRead && ((lastWrite + msgLen) >= lastRead)) {
+	if (lastWrite < lastRead && ((lastWrite + msgLen) >= lastRead)) {
 		/* Next write will over shot past lastRead */
 		/* Shouldn't happen - increase buffer size */
 		__atomic_store_n(&bd->isWaiting, true, __ATOMIC_SEQ_CST);
 		++seq; //TODO: Remove (for debugging)
 		sem_wait(&bd->sem);
-	} else if (msgLen >= lenToBufEnd) {
+	} else if (msgLen > lenToBufEnd) {
 		int bytesRemaining = msgLen - lenToBufEnd;
 		if (bytesRemaining >= lastRead) {
 			/* Wrap around will over shot past lastRead */
