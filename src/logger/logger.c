@@ -93,7 +93,6 @@ static void* runLogger() {
 				}
 				/* Flush data to disk */
 				fsync(logFile);
-
 				/* Update new lastRead */
 				__atomic_store_n(&bd->lastRead, lastWrite,
 				__ATOMIC_SEQ_CST);
@@ -108,7 +107,6 @@ static void* runLogger() {
 			}
 		}
 	}
-
 	return NULL;
 }
 
@@ -116,19 +114,22 @@ static void* runLogger() {
 void terminateLogger() {
 	isTerminate = true;
 	pthread_join(loggerThread, NULL);
+	close(logFile);
 }
 
-void registerThread() {
+bool registerThread() {
 	pthread_mutex_lock(&lock);
 
-	//TODO: return an error if trying to add more thread buffers than allowed
 	if (bufferDataArraySize == nextFreeCell) {
-//		return NULL;
+		//TODO: handle error
+		return STATUS_FAILURE;
 	}
 
 	bufferDataArray[nextFreeCell++]->tid = pthread_self();
 
 	pthread_mutex_unlock(&lock);
+
+	return STATUS_SUCCESS;
 }
 
 static bufferData* getBuffer() {
@@ -138,12 +139,11 @@ static bufferData* getBuffer() {
 
 	for (i = 0; i < nextFreeCell; ++i) {
 		bd = bufferDataArray[i];
-		if (bd->tid == thrd) {
+		if (0 != pthread_equal(bd->tid, thrd)) {
 			return bd;
 		}
 	}
 
-	printf("how???\n");
 	return NULL;
 }
 

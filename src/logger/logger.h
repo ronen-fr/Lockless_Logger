@@ -19,7 +19,7 @@
 #include <stdatomic.h>
 #include "statusCodes.h"
 
-#define BUFFSIZE 1048576
+#define BUFFSIZE 1000000
 
 //TODO: Remove (for debugging)
 int seq;
@@ -37,7 +37,7 @@ typedef struct bufferData {
 
 void initBufferData(bufferData* bd);
 bool initLogger(int threadsNum);
-void registerThread();
+bool registerThread();
 bool logMessage(char* msg);
 void terminateLogger();
 

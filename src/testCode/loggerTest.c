@@ -12,9 +12,9 @@
 
 #include "logger.h"
 
-#define ITERATIONS 10000
+#define ITERATIONS 1000
 #define NUM_THRDS 100
-#define BUF_SIZE 128
+#define BUF_SIZE 101
 
 char chars[] = "0123456789abcdefghijklmnopqrstuvwqxy";
 char **data;
@@ -64,14 +64,13 @@ void createRandomData(char **data, int charsLen) {
 }
 
 void* threadMethod(void *data) {
-	char *logData;
-
-	logData = data;
+	char *logData = data;
 
 	registerThread();
 	for (int i = 0; i < ITERATIONS; ++i) {
 		logMessage(logData);
 	}
+
 	return NULL;
 }
 
