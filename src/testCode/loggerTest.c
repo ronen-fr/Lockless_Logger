@@ -12,20 +12,20 @@
 
 #include "logger.h"
 
-#define ITERATIONS 100000
-#define NUM_THRDS 100
+#define ITERATIONS 10000
+#define NUM_THRDS 10
 #define BUF_SIZE 101
 
 char chars[] = "0123456789abcdefghijklmnopqrstuvwqxy";
-char **data;
+char** data;
 
-void createRandomData(char **data, int charsLen);
+void createRandomData(char** data, int charsLen);
 void* threadMethod();
 
 int main(void) {
 	pthread_t threads[NUM_THRDS];
-	int i;
-	int charsLen = strlen(chars);
+	unsigned int i;
+	unsigned int charsLen = strlen(chars);
 
 	initLogger(NUM_THRDS);
 
@@ -44,14 +44,11 @@ int main(void) {
 
 	terminateLogger();
 
-	//TODO: Remove (for debugging)
-	printf("Waiting:\nseq = %d, wrap = %d\n", seq, wrap);
-
 	return EXIT_SUCCESS;
 }
 
-void createRandomData(char **data, int charsLen) {
-	int i;
+void createRandomData(char** data, int charsLen) {
+	unsigned int i;
 	for (i = 0; i < NUM_THRDS; ++i) {
 		int j;
 		data[i] = malloc(BUF_SIZE);
@@ -63,11 +60,11 @@ void createRandomData(char **data, int charsLen) {
 	}
 }
 
-void* threadMethod(void *data) {
-	char *logData = data;
+void* threadMethod(void* data) {
+	char* logData = data;
 
 	registerThread();
-	for (int i = 0; i < ITERATIONS; ++i) {
+	for (unsigned int i = 0; i < ITERATIONS; ++i) {
 		logMessage(logData);
 	}
 

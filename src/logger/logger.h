@@ -17,28 +17,22 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdatomic.h>
-#include "statusCodes.h"
 
 #define BUFFSIZE 1000000
-
-//TODO: Remove (for debugging)
-int seq;
-int wrap;
+#define SHAREDBUFFSIZE 1000000
 
 typedef struct bufferData {
-	atomic_bool isWaiting;
-	atomic_int lastRead;
-	atomic_int lastWrite;
+	atomic_uint lastRead;
+	atomic_uint lastWrite;
 	int bufSize;
-	char* buf;
+	char *buf;
 	pthread_t tid;
-	sem_t sem;
 } bufferData;
 
-void initBufferData(bufferData* bd);
-bool initLogger(int threadsNum);
-bool registerThread();
-bool logMessage(char* msg);
+void initBufferData(bufferData *bd);
+int initLogger(const unsigned int threadsNum);
+int registerThread();
+int logMessage(const char *msg);
 void terminateLogger();
 
 #endif /* LOGGER */
