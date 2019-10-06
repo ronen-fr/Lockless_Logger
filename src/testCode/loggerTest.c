@@ -1,33 +1,51 @@
 /*
- * loggerTest.c
- *
- *  Created on: Sep 15, 2019
- *      Author: bsasonro
+ ============================================================================
+ Name        : loggerTest.c
+ Author      : Barak Sason Rofman
+ Version     :
+ Copyright   : Your copyright notice
+ Description :
+ ============================================================================
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/time.h>
 
 #include "logger.h"
 
-#define ITERATIONS 10000
-#define NUM_THRDS 10
+#define ITERATIONS 100000
+#define NUM_THRDS 100
 #define BUF_SIZE 101
 
-char chars[] = "0123456789abcdefghijklmnopqrstuvwqxy";
-char** data;
+#define BUFFSIZE 1000000
+#define SHAREDBUFFSIZE 10000000
 
-void createRandomData(char** data, int charsLen);
+char chars[] = "0123456789abcdefghijklmnopqrstuvwqxy";
+char **data;
+
+void createRandomData(char **data, int charsLen);
 void* threadMethod();
 
 int main(void) {
 	pthread_t threads[NUM_THRDS];
 	unsigned int i;
-	unsigned int charsLen = strlen(chars);
+	unsigned int charsLen;
+	//TODO: remove, for debug only
+	struct timeval tv1, tv2;
 
-	initLogger(NUM_THRDS);
+	if (access("logFile.txt", F_OK) != -1) {
+		remove("logFile.txt");
+	}
+
+	//TODO: remove, for debug only
+	gettimeofday(&tv1, NULL);
+
+	charsLen = strlen(chars);
+
+	initLogger(NUM_THRDS, BUFFSIZE, SHAREDBUFFSIZE);
 
 	data = malloc(NUM_THRDS * sizeof(char*));
 	createRandomData(data, charsLen);
@@ -40,14 +58,19 @@ int main(void) {
 		pthread_join(threads[i], NULL);
 	}
 
-	sleep(1);
-
 	terminateLogger();
+
+	//TODO: remove, for debug only
+	printf("cnt = %llu\n", cnt);
+	gettimeofday(&tv2, NULL);
+	printf("Total time = %f seconds\n",
+	        (double) (tv2.tv_usec - tv1.tv_usec) / 1000000
+	                + (double) (tv2.tv_sec - tv1.tv_sec));
 
 	return EXIT_SUCCESS;
 }
 
-void createRandomData(char** data, int charsLen) {
+void createRandomData(char **data, int charsLen) {
 	unsigned int i;
 	for (i = 0; i < NUM_THRDS; ++i) {
 		int j;
@@ -60,8 +83,8 @@ void createRandomData(char** data, int charsLen) {
 	}
 }
 
-void* threadMethod(void* data) {
-	char* logData = data;
+void* threadMethod(void *data) {
+	char *logData = data;
 
 	registerThread();
 	for (unsigned int i = 0; i < ITERATIONS; ++i) {

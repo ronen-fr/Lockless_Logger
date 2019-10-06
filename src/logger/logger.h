@@ -1,8 +1,11 @@
 /*
- * logger.h
- *
- *  Created on: Sep 15, 2019
- *      Author: bsasonro
+ ============================================================================
+ Name        : Logger_C.c
+ Author      : Barak Sason Rofman
+ Version     :
+ Copyright   : Your copyright notice
+ Description :
+ ============================================================================
  */
 
 #ifndef LOGGER
@@ -18,8 +21,8 @@
 #include <semaphore.h>
 #include <stdatomic.h>
 
-#define BUFFSIZE 1000000
-#define SHAREDBUFFSIZE 1000000
+//TODO: remove, for debug only
+long long cnt;
 
 typedef struct bufferData {
 	atomic_uint lastRead;
@@ -30,7 +33,8 @@ typedef struct bufferData {
 } bufferData;
 
 void initBufferData(bufferData *bd);
-int initLogger(const unsigned int threadsNum);
+int initLogger(const unsigned int threadsNum, unsigned int privateBuffSize,
+               unsigned int sharedBuffSize);
 int registerThread();
 int logMessage(const char *msg);
 void terminateLogger();
