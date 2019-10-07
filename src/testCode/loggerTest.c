@@ -17,22 +17,22 @@
 #include "logger.h"
 
 #define ITERATIONS 100000
-#define NUM_THRDS 100
+#define NUM_THRDS 10
 #define BUF_SIZE 101
 
 #define BUFFSIZE 1000000
 #define SHAREDBUFFSIZE 10000000
 
 char chars[] = "0123456789abcdefghijklmnopqrstuvwqxy";
-char **data;
+char** data;
 
-void createRandomData(char **data, int charsLen);
+void createRandomData(char** data, int charsLen);
 void* threadMethod();
 
 int main(void) {
 	pthread_t threads[NUM_THRDS];
-	unsigned int i;
-	unsigned int charsLen;
+	int i;
+	int charsLen;
 	//TODO: remove, for debug only
 	struct timeval tv1, tv2;
 
@@ -61,17 +61,17 @@ int main(void) {
 	terminateLogger();
 
 	//TODO: remove, for debug only
-	printf("cnt = %llu\n", cnt);
+	printf("Direct writes = %llu\n", cnt);
 	gettimeofday(&tv2, NULL);
 	printf("Total time = %f seconds\n",
-	        (double) (tv2.tv_usec - tv1.tv_usec) / 1000000
-	                + (double) (tv2.tv_sec - tv1.tv_sec));
+			(double) (tv2.tv_usec - tv1.tv_usec) / 1000000
+					+ (double) (tv2.tv_sec - tv1.tv_sec));
 
 	return EXIT_SUCCESS;
 }
 
-void createRandomData(char **data, int charsLen) {
-	unsigned int i;
+void createRandomData(char** data, int charsLen) {
+	int i;
 	for (i = 0; i < NUM_THRDS; ++i) {
 		int j;
 		data[i] = malloc(BUF_SIZE);
@@ -83,11 +83,11 @@ void createRandomData(char **data, int charsLen) {
 	}
 }
 
-void* threadMethod(void *data) {
-	char *logData = data;
+void* threadMethod(void* data) {
+	char* logData = data;
 
-	registerThread();
-	for (unsigned int i = 0; i < ITERATIONS; ++i) {
+	registerThread(getpid());
+	for (int i = 0; i < ITERATIONS; ++i) {
 		logMessage(logData);
 	}
 

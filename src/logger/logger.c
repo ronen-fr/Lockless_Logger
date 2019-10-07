@@ -15,60 +15,57 @@ enum statusCodes {
 };
 
 typedef struct sharedBuffer {
-	unsigned int lastRead;
-	unsigned int lastWrite;
-	unsigned int bufSize;
-	char *buf;
+	int lastRead;
+	int lastWrite;
+	int bufSize;
+	char* buf;
 	pthread_mutex_t lock;
 } sharedBuffer;
 
 static bool isTerminate;
-static unsigned int privateBufferSize;
-static unsigned int sharedBufferSize;
-static FILE *logFile;
+static int privateBufferSize;
+static int sharedBufferSize;
+static FILE* logFile;
 static int fileHandle;
-static unsigned int bufferDataArraySize;
-static unsigned int nextFreeCell;
-static bufferData **bufferDataArray;
+static int bufferDataArraySize;
+static int nextFreeCell;
+static bufferData** bufferDataArray;
 static pthread_mutex_t loggerLock;
 static pthread_t loggerThread;
 static sharedBuffer sharedBuf;
 
+static void initBufferData(bufferData* bd);
 static int createLogFile();
 static void* runLogger();
 
-inline static bufferData* getPrivateBuffer();
-inline static bool isNextWriteOverwrite(const unsigned int msgLen,
-                                        const unsigned int lastRead,
-                                        const atomic_uint lastWrite,
-                                        const unsigned int lenToBufEnd);
-inline static bool isSequentialOverwrite(const unsigned int lastRead,
-                                         const unsigned int lastWrite,
-                                         const unsigned int msgLen);
-inline static bool isWraparoundOverwrite(const unsigned int lastRead,
-                                         const unsigned int msgLen,
-                                         const unsigned int lenToBufEnd);
-inline static int writeToPrivateBuffer(bufferData *bd, const char *msg,
-                                       const unsigned int msgLen);
-inline static unsigned int writeSeq(char *buf, const char *msg,
-                                    const unsigned int msgLen,
-                                    const unsigned int lastWrite);
-inline static unsigned int writeWrap(char *buf, const char *msg,
-                                     const unsigned int msgLen,
-                                     const unsigned int lastWrite,
-                                     const unsigned int lenToBufEnd);
-inline static int writeToSharedBuffer(const char *msg,
-                                      const unsigned int msgLen);
-inline static long writeToFile(char *buf, const unsigned int lastRead,
-                               const unsigned int lastWrite,
-                               const unsigned int bufSize);
+inline static bufferData* getPrivateBuffer(pid_t tid);
+inline static bool isNextWriteOverwrite(const int msgLen, const int lastRead,
+										const atomic_int lastWrite,
+										const int lenToBufEnd);
+inline static bool isSequentialOverwrite(const int lastRead,
+											const int lastWrite,
+											const int msgLen);
+inline static bool isWraparoundOverwrite(const int lastRead, const int msgLen,
+											const int lenToBufEnd);
+inline static int writeToPrivateBuffer(bufferData* bd, const char* msg,
+										const int msgLen);
+inline static int writeSeq(char* buf, const char* msg, const int msgLen,
+							const int lastWrite);
+inline static int writeWrap(char* buf, const char* msg, const int msgLen,
+							const int lastWrite, const int lenToBufEnd);
+inline static int writeToSharedBuffer(const char* msg, const int msgLen);
+inline static int writeToFile(char* buf, const int lastRead,
+								const int lastWrite, const int bufSize);
 inline static void drainPrivateBuffers();
 inline static void drainSharedBuffer();
 
 /* Initialize all data required by the logger */
-int initLogger(const unsigned int threadsNum, unsigned int privateBuffSize,
-               unsigned int sharedBuffSize) {
-	unsigned int i;
+int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize) {
+	int i;
+
+	if (0 >= threadsNum || 0 >= privateBuffSize || 0 >= sharedBuffSize) {
+		return STATUS_FAILURE;
+	}
 
 	bufferDataArraySize = threadsNum;
 	privateBufferSize = privateBuffSize;
@@ -101,7 +98,7 @@ int initLogger(const unsigned int threadsNum, unsigned int privateBuffSize,
 }
 
 /* Initialize given bufferData struct */
-void initBufferData(bufferData *bd) {
+void initBufferData(bufferData* bd) {
 	bd->bufSize = privateBufferSize;
 	//TODO: think if malloc failures need to be handled
 	bd->buf = malloc(privateBufferSize);
@@ -113,7 +110,7 @@ static int createLogFile() {
 	//TODO: implement rotating log
 	logFile = fopen("logFile.txt", "w");
 
-	if ( NULL == logFile) {
+	if (NULL == logFile) {
 		//TODO: handle error
 		return STATUS_FAILURE;
 	}
@@ -124,13 +121,13 @@ static int createLogFile() {
 }
 
 /* Register a worker thread at the logger and assign one of the buffers to it */
-int registerThread() {
+int registerThread(pid_t tid) {
 	pthread_mutex_lock(&loggerLock); /* Lock */
 	{
 		if (bufferDataArraySize == nextFreeCell) {
 			return STATUS_FAILURE;
 		}
-		bufferDataArray[nextFreeCell++]->tid = pthread_self();
+		bufferDataArray[nextFreeCell++]->tid = tid;
 	}
 	pthread_mutex_unlock(&loggerLock); /* Unlock */
 
@@ -139,7 +136,7 @@ int registerThread() {
 
 /* Logger thread loop */
 static void* runLogger() {
-	while ( false == isTerminate) {
+	while (false == isTerminate) {
 		drainPrivateBuffers();
 		drainSharedBuffer();
 		/* Flush the stream in case worker threads wrote to it */
@@ -151,19 +148,19 @@ static void* runLogger() {
 
 /* Drain all private buffers assigned to worker threads to the log file */
 inline static void drainPrivateBuffers() {
-	unsigned int i;
-	unsigned int newLastRead;
-	atomic_uint lastWrite;
-	bufferData *bd;
+	int i;
+	int newLastRead;
+	atomic_int lastWrite;
+	bufferData* bd;
 
 	for (i = 0; i < bufferDataArraySize; ++i) {
 		bd = bufferDataArray[i];
-		if ( NULL != bd) {
+		if (NULL != bd) {
 			/* Atomic load lastWrite, as it is changed by the worker thread */
 			__atomic_load(&bd->lastWrite, &lastWrite, __ATOMIC_SEQ_CST);
 
 			newLastRead = writeToFile(bd->buf, bd->lastRead, lastWrite,
-			        bd->bufSize);
+										bd->bufSize);
 			if (STATUS_FAILURE != newLastRead) {
 				/* Atomic store lastRead, as it is read by the worker thread */
 				__atomic_store_n(&bd->lastRead, newLastRead,
@@ -175,12 +172,12 @@ inline static void drainPrivateBuffers() {
 
 /* Drain the buffer which is shared by the worker threads to the log file */
 inline static void drainSharedBuffer() {
-	unsigned int newLastRead;
+	int newLastRead;
 
 	pthread_mutex_lock(&sharedBuf.lock); /* Lock */
 	{
 		newLastRead = writeToFile(sharedBuf.buf, sharedBuf.lastRead,
-		        sharedBuf.lastWrite, sharedBuf.bufSize);
+									sharedBuf.lastWrite, sharedBuf.bufSize);
 		if (STATUS_FAILURE != newLastRead) {
 			sharedBuf.lastRead = newLastRead;
 		}
@@ -191,11 +188,10 @@ inline static void drainSharedBuffer() {
 /* Perform actual write to log file from a given buffer.
  * In a case of successful write, the method returns the new position of lastRead.
  * In case of failure, the method returns -1. */
-inline static long writeToFile(char *buf, const unsigned int lastRead,
-                               const unsigned int lastWrite,
-                               const unsigned int bufSize) {
-	unsigned int dataLen;
-	unsigned int lenToBufEnd;
+inline static int writeToFile(char* buf, const int lastRead,
+								const int lastWrite, const int bufSize) {
+	int dataLen;
+	int lenToBufEnd;
 
 	if (lastWrite > lastRead) {
 		dataLen = lastWrite - lastRead - 1;
@@ -226,18 +222,17 @@ inline static long writeToFile(char *buf, const unsigned int lastRead,
 void terminateLogger() {
 	isTerminate = true;
 	pthread_join(loggerThread, NULL);
-	close(fileHandle);
+	fclose(logFile);
 }
 
 /* Get a buffer assigned to a worker thread based on thread id */
-inline static bufferData* getPrivateBuffer() {
-	unsigned int i;
-	bufferData *bd;
-	pthread_t thrd = pthread_self();
+inline static bufferData* getPrivateBuffer(pid_t tid) {
+	int i;
+	bufferData* bd;
 
 	for (i = 0; i < nextFreeCell; ++i) {
 		bd = bufferDataArray[i];
-		if (0 != pthread_equal(bd->tid, thrd)) {
+		if (bd->tid == tid) {
 			return bd;
 		}
 	}
@@ -246,14 +241,19 @@ inline static bufferData* getPrivateBuffer() {
 }
 
 /* Add a message from a worker thread to a buffer or write it directly to file
- * if buffers are full */
-int logMessage(const char *msg) {
-	unsigned int msgLen;
-	bufferData *bd;
+ * if buffers are full.
+ * Note: 'msg' must be a null-terminated string */
+int logMessage(const char* msg) {
+	int msgLen;
+	bufferData* bd;
+
+	if (NULL == msg) {
+		return STATUS_FAILURE;
+	}
 
 	//TODO: implement rotating file write
-	bd = getPrivateBuffer();
-	if ( NULL == bd) {
+	bd = getPrivateBuffer(getpid());
+	if (NULL == bd) {
 		//TODO: think if write from unregistered worker threads should be allowed
 		return STATUS_FAILURE;
 	}
@@ -274,12 +274,12 @@ int logMessage(const char *msg) {
 }
 
 /* Add a message from a worker thread to it's private buffer */
-inline static int writeToPrivateBuffer(bufferData *bd, const char *msg,
-                                       const unsigned int msgLen) {
-	unsigned int lastRead;
-	unsigned int lastWrite;
-	unsigned int lenToBufEnd;
-	unsigned int newLastWrite;
+inline static int writeToPrivateBuffer(bufferData* bd, const char* msg,
+										const int msgLen) {
+	int lastRead;
+	int lastWrite;
+	int lenToBufEnd;
+	int newLastWrite;
 
 	/* Atomic load lastRead, as it is changed by the logger thread */
 	__atomic_load(&bd->lastRead, &lastRead, __ATOMIC_SEQ_CST);
@@ -287,12 +287,12 @@ inline static int writeToPrivateBuffer(bufferData *bd, const char *msg,
 	lastWrite = bd->lastWrite;
 	lenToBufEnd = bd->bufSize - lastWrite;
 
-	if ( false
-	        == isNextWriteOverwrite(msgLen, lastRead, lastWrite, lenToBufEnd)) {
+	if (false
+			== isNextWriteOverwrite(msgLen, lastRead, lastWrite, lenToBufEnd)) {
 		newLastWrite =
-		        lenToBufEnd >= msgLen ?
-		                writeSeq(bd->buf, msg, msgLen, lastWrite) :
-		                writeWrap(bd->buf, msg, msgLen, lastWrite, lenToBufEnd);
+				lenToBufEnd >= msgLen ?
+						writeSeq(bd->buf, msg, msgLen, lastWrite) :
+						writeWrap(bd->buf, msg, msgLen, lastWrite, lenToBufEnd);
 
 		/* Atomic store lastWrite, as it is read by the logger thread */
 		__atomic_store_n(&bd->lastWrite, newLastWrite, __ATOMIC_SEQ_CST);
@@ -303,25 +303,23 @@ inline static int writeToPrivateBuffer(bufferData *bd, const char *msg,
 }
 
 /* Check for 2 potential cases data override */
-inline static bool isNextWriteOverwrite(const unsigned int msgLen,
-                                        const unsigned int lastRead,
-                                        const atomic_uint lastWrite,
-                                        const unsigned int lenToBufEnd) {
+inline static bool isNextWriteOverwrite(const int msgLen, const int lastRead,
+										const atomic_int lastWrite,
+										const int lenToBufEnd) {
 	return (isSequentialOverwrite(lastRead, lastWrite, msgLen)
-	        || isWraparoundOverwrite(lastRead, msgLen, lenToBufEnd));
+			|| isWraparoundOverwrite(lastRead, msgLen, lenToBufEnd));
 }
 
 /* Check for sequential data override */
-inline static bool isSequentialOverwrite(const unsigned int lastRead,
-                                         const unsigned int lastWrite,
-                                         const unsigned int msgLen) {
+inline static bool isSequentialOverwrite(const int lastRead,
+											const int lastWrite,
+											const int msgLen) {
 	return (lastWrite < lastRead && ((lastWrite + msgLen) >= lastRead));
 }
 
 /* Check for wrap-around data override */
-inline static bool isWraparoundOverwrite(const unsigned int lastRead,
-                                         const unsigned int msgLen,
-                                         const unsigned int lenToBufEnd) {
+inline static bool isWraparoundOverwrite(const int lastRead, const int msgLen,
+											const int lenToBufEnd) {
 	if (msgLen > lenToBufEnd) {
 		int bytesRemaining = msgLen - lenToBufEnd;
 		return bytesRemaining >= lastRead;
@@ -331,9 +329,8 @@ inline static bool isWraparoundOverwrite(const unsigned int lastRead,
 }
 
 /* Write sequentially to buffer */
-inline static unsigned int writeSeq(char *buf, const char *msg,
-                                    const unsigned int msgLen,
-                                    const unsigned int lastWrite) {
+inline static int writeSeq(char* buf, const char* msg, const int msgLen,
+							const int lastWrite) {
 	memcpy(buf + lastWrite, msg, msgLen);
 
 	return lastWrite + msgLen;
@@ -341,11 +338,9 @@ inline static unsigned int writeSeq(char *buf, const char *msg,
 
 /* Space at the end of the buffer is insufficient - write what is possible to
  * the end of the buffer, the rest write at the beginning of the buffer */
-inline static unsigned int writeWrap(char *buf, const char *msg,
-                                     const unsigned int msgLen,
-                                     const unsigned int lastWrite,
-                                     const unsigned int lenToBufEnd) {
-	unsigned int bytesRemaining = msgLen - lenToBufEnd;
+inline static int writeWrap(char* buf, const char* msg, const int msgLen,
+							const int lastWrite, const int lenToBufEnd) {
+	int bytesRemaining = msgLen - lenToBufEnd;
 	memcpy(buf + lastWrite, msg, lenToBufEnd);
 	memcpy(buf, msg + lenToBufEnd, bytesRemaining);
 
@@ -353,13 +348,12 @@ inline static unsigned int writeWrap(char *buf, const char *msg,
 }
 
 /* Add a message from a worker thread to the shared buffer */
-inline static int writeToSharedBuffer(const char *msg,
-                                      const unsigned int msgLen) {
+inline static int writeToSharedBuffer(const char* msg, const int msgLen) {
 	int res = STATUS_FAILURE;
-	unsigned int lastRead;
-	unsigned int lastWrite;
-	unsigned int lenToBufEnd;
-	unsigned int newLastWrite;
+	int lastRead;
+	int lastWrite;
+	int lenToBufEnd;
+	int newLastWrite;
 
 	pthread_mutex_lock(&sharedBuf.lock); /* Lock */
 	{
@@ -367,14 +361,14 @@ inline static int writeToSharedBuffer(const char *msg,
 		lastWrite = sharedBuf.lastWrite;
 		lenToBufEnd = sharedBuf.bufSize - sharedBuf.lastWrite;
 
-		if ( false
-		        == isNextWriteOverwrite(msgLen, lastRead, lastWrite,
-		                lenToBufEnd)) {
+		if (false
+				== isNextWriteOverwrite(msgLen, lastRead, lastWrite,
+										lenToBufEnd)) {
 			newLastWrite =
-			        lenToBufEnd >= msgLen ?
-			                writeSeq(sharedBuf.buf, msg, msgLen, lastWrite) :
-			                writeWrap(sharedBuf.buf, msg, msgLen, lastWrite,
-			                        lenToBufEnd);
+					lenToBufEnd >= msgLen ?
+							writeSeq(sharedBuf.buf, msg, msgLen, lastWrite) :
+							writeWrap(sharedBuf.buf, msg, msgLen, lastWrite,
+										lenToBufEnd);
 
 			sharedBuf.lastWrite = newLastWrite;
 			res = STATUS_SUCCESS;

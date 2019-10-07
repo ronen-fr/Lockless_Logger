@@ -25,18 +25,16 @@
 long long cnt;
 
 typedef struct bufferData {
-	atomic_uint lastRead;
-	atomic_uint lastWrite;
+	atomic_int lastRead;
+	atomic_int lastWrite;
 	int bufSize;
-	char *buf;
-	pthread_t tid;
+	char* buf;
+	pid_t tid;
 } bufferData;
 
-void initBufferData(bufferData *bd);
-int initLogger(const unsigned int threadsNum, unsigned int privateBuffSize,
-               unsigned int sharedBuffSize);
-int registerThread();
-int logMessage(const char *msg);
+int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize);
+int registerThread(pid_t tid);
+int logMessage(const char* msg);
 void terminateLogger();
 
 #endif /* LOGGER */
