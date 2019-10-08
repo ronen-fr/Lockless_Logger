@@ -38,7 +38,7 @@ static void initBufferData(bufferData* bd);
 static int createLogFile();
 static void* runLogger();
 
-inline static bufferData* getPrivateBuffer(pid_t tid);
+inline static bufferData* getPrivateBuffer(pthread_t tid);
 inline static bool isNextWriteOverwrite(const int msgLen, const int lastRead,
 										const atomic_int lastWrite,
 										const int lenToBufEnd);
@@ -121,7 +121,7 @@ static int createLogFile() {
 }
 
 /* Register a worker thread at the logger and assign one of the buffers to it */
-int registerThread(pid_t tid) {
+int registerThread(pthread_t tid) {
 	pthread_mutex_lock(&loggerLock); /* Lock */
 	{
 		if (bufferDataArraySize == nextFreeCell) {
@@ -226,13 +226,13 @@ void terminateLogger() {
 }
 
 /* Get a buffer assigned to a worker thread based on thread id */
-inline static bufferData* getPrivateBuffer(pid_t tid) {
+inline static bufferData* getPrivateBuffer(pthread_t tid) {
 	int i;
 	bufferData* bd;
 
 	for (i = 0; i < nextFreeCell; ++i) {
 		bd = bufferDataArray[i];
-		if (bd->tid == tid) {
+		if (0 != pthread_equal(bd->tid, tid)) {
 			return bd;
 		}
 	}
@@ -252,7 +252,7 @@ int logMessage(const char* msg) {
 	}
 
 	//TODO: implement rotating file write
-	bd = getPrivateBuffer(getpid());
+	bd = getPrivateBuffer(pthread_self());
 	if (NULL == bd) {
 		//TODO: think if write from unregistered worker threads should be allowed
 		return STATUS_FAILURE;
@@ -349,7 +349,7 @@ inline static int writeWrap(char* buf, const char* msg, const int msgLen,
 
 /* Add a message from a worker thread to the shared buffer */
 inline static int writeToSharedBuffer(const char* msg, const int msgLen) {
-	int res = STATUS_FAILURE;
+	int res;
 	int lastRead;
 	int lastWrite;
 	int lenToBufEnd;
@@ -372,6 +372,8 @@ inline static int writeToSharedBuffer(const char* msg, const int msgLen) {
 
 			sharedBuf.lastWrite = newLastWrite;
 			res = STATUS_SUCCESS;
+		} else {
+			res = STATUS_FAILURE;
 		}
 	}
 	pthread_mutex_unlock(&sharedBuf.lock); /* Unlock */

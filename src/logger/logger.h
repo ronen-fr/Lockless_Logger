@@ -29,11 +29,11 @@ typedef struct bufferData {
 	atomic_int lastWrite;
 	int bufSize;
 	char* buf;
-	pid_t tid;
+	pthread_t tid;
 } bufferData;
 
 int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize);
-int registerThread(pid_t tid);
+int registerThread(pthread_t tid);
 int logMessage(const char* msg);
 void terminateLogger();
 

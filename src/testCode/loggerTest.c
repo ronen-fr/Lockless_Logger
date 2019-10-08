@@ -86,7 +86,7 @@ void createRandomData(char** data, int charsLen) {
 void* threadMethod(void* data) {
 	char* logData = data;
 
-	registerThread(getpid());
+	registerThread(pthread_self());
 	for (int i = 0; i < ITERATIONS; ++i) {
 		logMessage(logData);
 	}
