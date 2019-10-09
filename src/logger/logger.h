@@ -11,15 +11,9 @@
 #ifndef LOGGER
 #define LOGGER
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdbool.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <stdatomic.h>
+#include <sys/time.h>
 
 //TODO: remove, for debug only
 long long cnt;
@@ -32,9 +26,28 @@ typedef struct bufferData {
 	pthread_t tid;
 } bufferData;
 
+typedef struct messageInfo {
+	char* file;
+	const char* func;
+	int line;
+	int msgLen;
+	int millisec;
+	pthread_t tid;
+	struct tm* tm_info;
+	struct timeval tv;
+//TODO: handle log levels
+//	int level;
+} messageInfo;
+
 int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize);
 int registerThread(pthread_t tid);
-int logMessage(const char* msg);
+
+/* 'logMessage' should be called only by using the macro 'LOG_MSG' */
+int logMessage(char* file, const char* func, const int line, const char* msg,
+               ...);
+
 void terminateLogger();
+
+#define LOG_MSG(msg ...) logMessage(__FILE__, __PRETTY_FUNCTION__, __LINE__, msg)
 
 #endif /* LOGGER */

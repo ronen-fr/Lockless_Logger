@@ -11,14 +11,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <stdarg.h>
 
 #include "logger.h"
 
-#define ITERATIONS 100000
-#define NUM_THRDS 10
-#define BUF_SIZE 101
+#define ITERATIONS 1000
+#define NUM_THRDS 50
+#define BUF_SIZE 106
 
 #define BUFFSIZE 1000000
 #define SHAREDBUFFSIZE 10000000
@@ -64,8 +66,8 @@ int main(void) {
 	printf("Direct writes = %llu\n", cnt);
 	gettimeofday(&tv2, NULL);
 	printf("Total time = %f seconds\n",
-			(double) (tv2.tv_usec - tv1.tv_usec) / 1000000
-					+ (double) (tv2.tv_sec - tv1.tv_sec));
+	       (double) (tv2.tv_usec - tv1.tv_usec) / 1000000
+	               + (double) (tv2.tv_sec - tv1.tv_sec));
 
 	return EXIT_SUCCESS;
 }
@@ -75,11 +77,9 @@ void createRandomData(char** data, int charsLen) {
 	for (i = 0; i < NUM_THRDS; ++i) {
 		int j;
 		data[i] = malloc(BUF_SIZE);
-		for (j = 0; j < BUF_SIZE - 2; ++j) {
+		for (j = 0; j < BUF_SIZE; ++j) {
 			data[i][j] = chars[rand() % charsLen];
 		}
-		data[i][BUF_SIZE - 2] = '\n';
-		data[i][BUF_SIZE - 1] = '\0';
 	}
 }
 
@@ -88,7 +88,7 @@ void* threadMethod(void* data) {
 
 	registerThread(pthread_self());
 	for (int i = 0; i < ITERATIONS; ++i) {
-		logMessage(logData);
+		LOG_MSG("Log message with arguments: %s", logData);
 	}
 
 	return NULL;
