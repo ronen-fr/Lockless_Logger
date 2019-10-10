@@ -20,7 +20,7 @@
 
 #define ITERATIONS 1000
 #define NUM_THRDS 50
-#define BUF_SIZE 95
+#define BUF_SIZE 92
 
 #define BUFFSIZE 1000000
 #define SHAREDBUFFSIZE 10000000
@@ -87,6 +87,7 @@ void* threadMethod(void* data) {
 	char* logData = data;
 
 	registerThread(pthread_self());
+
 	for (int i = 0; i < ITERATIONS; ++i) {
 		LOG_MSG("A message with arguments: %s", logData);
 	}

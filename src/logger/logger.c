@@ -39,7 +39,7 @@ typedef struct sharedBuffer {
 	pthread_mutex_t lock;
 } sharedBuffer;
 
-static bool isTerminate;
+static atomic_bool isTerminate;
 static int privateBufferSize;
 static int sharedBufferSize;
 static FILE* logFile;
@@ -53,6 +53,7 @@ static sharedBuffer sharedBuf;
 static void initBufferData(bufferData* bd);
 static int createLogFile();
 static void* runLogger();
+static void freeResources();
 
 inline static bufferData* getPrivateBuffer(pthread_t tid);
 inline static bool isNextWriteOverwrite(const int lastRead,
@@ -163,11 +164,23 @@ int registerThread(pthread_t tid) {
 
 /* Logger thread loop */
 static void* runLogger() {
-	while (false == isTerminate) {
+	bool isTerminateLoc = false;
+	bool isCleanup = false;
+
+	while (false == isTerminateLoc || true == isCleanup) {
 		drainPrivateBuffers();
 		drainSharedBuffer();
 		/* At each iteration flush buffers to avoid data loss */
 		fflush(logFile);
+		if (true == isCleanup) {
+			break;
+		}
+		__atomic_load(&isTerminate, &isTerminateLoc, __ATOMIC_SEQ_CST);
+		if (isTerminateLoc == true) {
+			isCleanup = true;
+			/* This allows the logger loop to run one last time, ensuring all
+			 * data in the buffers will be written to the log file */
+		}
 	}
 
 	return NULL;
@@ -246,8 +259,28 @@ inline static int bufferdWriteToFile(char* buf, const int lastRead,
 
 /* Terminate the logger thread and release resources */
 void terminateLogger() {
-	isTerminate = true;
+	__atomic_store_n(&isTerminate, true, __ATOMIC_SEQ_CST);
 	pthread_join(loggerThread, NULL);
+	freeResources();
+}
+
+/* Release all malloc'ed resources, destroy mutexs and close open file */
+static void freeResources() {
+	int i;
+	bufferData* bd;
+
+	free(sharedBuf.buf);
+
+	pthread_mutex_destroy(&sharedBuf.lock);
+
+	for (i = 0; i < bufferDataArraySize; ++i) {
+		bd = bufferDataArray[i];
+		free(bd->buf);
+		free(bd);
+	}
+
+	pthread_mutex_destroy(&loggerLock);
+
 	fclose(logFile);
 }
 
@@ -256,11 +289,18 @@ void terminateLogger() {
  * Note: 'msg' must be a null-terminated string */
 int logMessage(char* file, const char* func, const int line, const char* msg,
                ...) {
+	bool isTerminateLoc;
 	pthread_t tid;
 	bufferData* bd;
 	messageInfo msgInfo;
 	va_list arg;
 	char argsBuf[ARGS_LEN];
+
+	/* Prevent writing new messages if logger is terminating */
+	__atomic_load(&isTerminate, &isTerminateLoc, __ATOMIC_SEQ_CST);
+	if (true == isTerminateLoc) {
+		return STATUS_FAILURE;
+	}
 
 	if (NULL == msg) {
 		return STATUS_FAILURE;
@@ -327,7 +367,7 @@ inline static void setMsgInfoValues(messageInfo* msgInfo, char* file,
                                     pthread_t tid) {
 	gettimeofday(&msgInfo->tv, NULL);
 	msgInfo->tm_info = localtime(&msgInfo->tv.tv_sec);
-	msgInfo->millisec = msgInfo->tv.tv_usec / 1000;
+	msgInfo->millisec = msgInfo->tv.tv_usec;
 	msgInfo->file = file;
 	msgInfo->func = func;
 	msgInfo->line = line;
@@ -348,8 +388,8 @@ inline static int writeToPrivateBuffer(bufferData* bd, messageInfo* msgInfo,
 	lenToBufEnd = bd->bufSize - lastWrite;
 
 	if (false == isNextWriteOverwrite(lastRead, lastWrite, lenToBufEnd)) {
-		newLastWrite = writeSeqOrWrap(bd->buf, lastWrite, lenToBufEnd,
-		                              msgInfo, argsBuf);
+		newLastWrite = writeSeqOrWrap(bd->buf, lastWrite, lenToBufEnd, msgInfo,
+		                              argsBuf);
 
 		/* Atomic store lastWrite, as it is read by the logger thread */
 		__atomic_store_n(&bd->lastWrite, newLastWrite,
@@ -484,7 +524,8 @@ inline static int writeInFormat(char* buf, const messageInfo* msgInfo,
                                 const char* argsBuf) {
 	int msgLen;
 
-	msgLen = sprintf(buf, "[mid: %x:%x] [tid: %x] [loc: %s:%d:%s] [msg: %s]\n",
+	msgLen = sprintf(buf,
+	                 "[mid: %x:%.5x] [tid: %x] [loc: %s:%d:%s] [msg: %s]\n",
 	                 (unsigned int) (msgInfo->tv.tv_sec + msgInfo->millisec),
 	                 msgInfo->millisec, (unsigned int) msgInfo->tid,
 	                 msgInfo->file, msgInfo->line, msgInfo->func, argsBuf);
