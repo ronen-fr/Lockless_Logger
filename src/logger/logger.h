@@ -1,10 +1,10 @@
 /*
  ============================================================================
- Name        : Logger_C.c
+ Name        : logger.h
  Author      : Barak Sason Rofman
- Version     :
- Copyright   : Your copyright notice
- Description :
+ Version     : TODO: update
+ Copyright   : TODO: update
+ Description : TODO: update
  ============================================================================
  */
 

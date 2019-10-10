@@ -2,9 +2,9 @@
  ============================================================================
  Name        : loggerTest.c
  Author      : Barak Sason Rofman
- Version     :
- Copyright   : Your copyright notice
- Description :
+ Version     : TODO: update
+ Copyright   : TODO: update
+ Description : TODO: update
  ============================================================================
  */
 
@@ -20,7 +20,7 @@
 
 #define ITERATIONS 1000
 #define NUM_THRDS 50
-#define BUF_SIZE 106
+#define BUF_SIZE 95
 
 #define BUFFSIZE 1000000
 #define SHAREDBUFFSIZE 10000000
@@ -88,7 +88,7 @@ void* threadMethod(void* data) {
 
 	registerThread(pthread_self());
 	for (int i = 0; i < ITERATIONS; ++i) {
-		LOG_MSG("Log message with arguments: %s", logData);
+		LOG_MSG("A message with arguments: %s", logData);
 	}
 
 	return NULL;
