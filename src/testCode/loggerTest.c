@@ -18,9 +18,9 @@
 
 #include "logger.h"
 
-#define ITERATIONS 1000
+#define ITERATIONS 100
 #define NUM_THRDS 50
-#define BUF_SIZE 92
+#define BUF_SIZE 75
 
 #define BUFFSIZE 1000000
 #define SHAREDBUFFSIZE 10000000
@@ -34,6 +34,7 @@ void* threadMethod();
 int main(void) {
 	pthread_t threads[NUM_THRDS];
 	int i;
+	int res;
 	int charsLen;
 	//TODO: remove, for debug only
 	struct timeval tv1, tv2;
@@ -47,29 +48,30 @@ int main(void) {
 
 	charsLen = strlen(chars);
 
-	initLogger(NUM_THRDS, BUFFSIZE, SHAREDBUFFSIZE);
+	res = initLogger(NUM_THRDS, BUFFSIZE, SHAREDBUFFSIZE, LOG_LEVEL_TRACE);
+	if (STATUS_LOGGER_SUCCESS == res) {
+		data = malloc(NUM_THRDS * sizeof(char*));
+		createRandomData(data, charsLen);
 
-	data = malloc(NUM_THRDS * sizeof(char*));
-	createRandomData(data, charsLen);
+		for (i = 0; i < NUM_THRDS; ++i) {
+			pthread_create(&threads[i], NULL, threadMethod, data[i]);
+		}
 
-	for (i = 0; i < NUM_THRDS; ++i) {
-		pthread_create(&threads[i], NULL, threadMethod, data[i]);
+		for (i = 0; i < NUM_THRDS; ++i) {
+			pthread_join(threads[i], NULL);
+		}
+
+		terminateLogger();
+
+		//TODO: remove, for debug only
+		printf("Direct writes = %llu\n", cnt);
+		gettimeofday(&tv2, NULL);
+		printf("Total time = %f seconds\n",
+		       (double) (tv2.tv_usec - tv1.tv_usec) / 1000000
+		               + (double) (tv2.tv_sec - tv1.tv_sec));
 	}
 
-	for (i = 0; i < NUM_THRDS; ++i) {
-		pthread_join(threads[i], NULL);
-	}
-
-	terminateLogger();
-
-	//TODO: remove, for debug only
-	printf("Direct writes = %llu\n", cnt);
-	gettimeofday(&tv2, NULL);
-	printf("Total time = %f seconds\n",
-	       (double) (tv2.tv_usec - tv1.tv_usec) / 1000000
-	               + (double) (tv2.tv_sec - tv1.tv_sec));
-
-	return EXIT_SUCCESS;
+	return res;
 }
 
 void createRandomData(char** data, int charsLen) {
@@ -89,7 +91,7 @@ void* threadMethod(void* data) {
 	registerThread(pthread_self());
 
 	for (int i = 0; i < ITERATIONS; ++i) {
-		LOG_MSG("A message with arguments: %s", logData);
+		LOG_MSG(LOG_LEVEL_EMERG, "A message with arguments: %s", logData);
 	}
 
 	return NULL;
