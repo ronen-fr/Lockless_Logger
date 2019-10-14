@@ -54,7 +54,7 @@ typedef struct messageInfo {
 } messageInfo;
 
 int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize,
-               int loggingLevel);
+               int loggingLevel); // threadsNum must be known in advance?
 int registerThread(pthread_t tid);
 
 /* 'logMessage' should be called only by using the macro 'LOG_LEVEL_MSG' */
