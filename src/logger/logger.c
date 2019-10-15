@@ -158,6 +158,7 @@ int registerThread(pthread_t tid) {
 	pthread_mutex_lock(&loggerLock); /* Lock */
 	{
 		if (bufferDataArraySize == nextFreeCell) {
+			// what about the lock held here?
 			return STATUS_FAILURE;
 		}
 		bufferDataArray[nextFreeCell++]->tid = tid;
@@ -172,12 +173,12 @@ static void* runLogger() {
 	bool isTerminateLoc = false;
 	bool isCleanup = false;
 
-	while (false == isTerminateLoc || true == isCleanup) {
+	while (false == isTerminateLoc || true == isCleanup) { // could you have used 'do..while' instead of the isCleanup?
 		drainPrivateBuffers();
 		drainSharedBuffer();
 		/* At each iteration flush buffers to avoid data loss */
-		fflush(logFile);
-		if (true == isCleanup) {
+		fflush(logFile); // not sure, but I thing data-flush is better here
+		if (true == isCleanup) {  / if (isCleanup) is a common-enough idiom
 			break;
 		}
 		__atomic_load(&isTerminate, &isTerminateLoc, __ATOMIC_SEQ_CST);
@@ -304,7 +305,7 @@ int logMessage(int loggingLevel, char* file, const int line, const char* func,
 	/* Don't log if trying to log messages with higher level than requested
 	 * of log level was set to LOG_LEVEL_NONE */
 	if (LOG_LEVEL_NONE == logLevel || loggingLevel > logLevel) {
-		return STATUS_FAILURE;
+		return STATUS_FAILURE; // is it a failure? I would just silently ignore
 	}
 
 	tid = pthread_self();
@@ -313,14 +314,16 @@ int logMessage(int loggingLevel, char* file, const int line, const char* func,
 	/* Don't log if:
 	 * - Logger is terminating
 	 * - 'msg' is an invalid value
-	 * - Unable to retrieve a private buffer for the current thread*/
-	//TODO: think if write from unregistered worker threads should be allowed
+	 * - Unable to retrieve a private buffer for the current thread
+	 */
+	//TODO: think if write from unregistered worker threads should be allowed 
+	// - probably a must
 	__atomic_load(&isTerminate, &isTerminateLoc, __ATOMIC_SEQ_CST);
 	if (true == isTerminateLoc || NULL == msg || NULL == bd) {
 		return STATUS_FAILURE;
 	}
 
-	discardFilenamePrefix(&file);
+	discardFilenamePrefix(&file);  // every time??
 	setMsgInfoValues(&msgInfo, file, func, line, tid, loggingLevel);
 
 	/* Get message arguments values */
@@ -331,11 +334,11 @@ int logMessage(int loggingLevel, char* file, const int line, const char* func,
 	/* Try each level of writing. If a level fails (buffer full), fall back to a
 	 * lower & slower level */
 	if (STATUS_SUCCESS != writeToPrivateBuffer(bd, &msgInfo, argsBuf)) {
-		/* Recommended no to get here - Increase private buffers size */
+		/* Recommended noT to get here - Increase private buffers size */
 		if (STATUS_SUCCESS != writeToSharedBuffer(&msgInfo, argsBuf)) {
-			/* Recommended no to get here - Increase private and shared buffers size */
+			/* Recommended noT to get here - Increase private and shared buffers size */
 			directWriteToFile(&msgInfo, argsBuf);
-			++cnt; //TODO: remove, for debug only
+			++cnt; //TODO: remove, for debug only <- not sure. Always an important piece of information
 		}
 	}
 
@@ -381,7 +384,7 @@ inline static void setMsgInfoValues(messageInfo* msgInfo, char* file,
 	msgInfo->logLevel = loggingLevel;
 }
 
-/* Add a message from a worker thread to it's private buffer */
+/* Add a message from a worker thread to its private buffer */
 inline static int writeToPrivateBuffer(bufferData* bd, messageInfo* msgInfo,
                                        const char* argsBuf) {
 	int lastRead;
@@ -438,7 +441,8 @@ inline static int writeToSharedBuffer(messageInfo* msgInfo, const char* argsBuf)
 	return res;
 }
 
-/* Write to buffer in a sequential or wrap-around manner according to conditions */
+/* Write to buffer in a sequential or wrap-around manner according to conditions */ comment not helpful, as it
+does not add to the information in the name. Better describe the 'conditions'.
 inline static int writeSeqOrWrap(char* buf, const int lastWrite,
                                  const int lenToBufEnd,
                                  const messageInfo* msgInfo,
