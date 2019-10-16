@@ -17,6 +17,8 @@
 
 #include "logger.h"
 
+// isn't sequential-consistency the default for all atomic ops? why do you need to specify it?
+
 enum statusCodes {
 	STATUS_FAILURE = -1, STATUS_SUCCESS
 };
@@ -92,7 +94,13 @@ inline static int writeSeqOrWrap(char* buf, const int lastWrite,
                                  const messageInfo* msgInfo,
                                  const char* argsBuf);
 
-/* Initialize all data required by the logger */
+/* Initialize all data required by the logger * /
+ if you assume that initLogger is called:
+1. by the main thread only
+2. before any other thread has a chance to try to log anything
+then better document it
+*/
+
 int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize,
                int loggingLevel) {
 	int i;
@@ -114,6 +122,9 @@ int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize,
 
 	/* Init private buffers */
 	//TODO: think if malloc failures need to be handled
+	/* my take: see discussion in C++ standartization processes: failure to allocate small sizes should
+	   usually be traeted as fatal, and terminate. For large blocks - you may want to consider retrying
+	   with smaller sizes */
 	bufferDataArray = malloc(threadsNum * sizeof(bufferData*));
 	for (i = 0; i < bufferDataArraySize; ++i) {
 		bufferDataArray[i] = malloc(sizeof(bufferData));
@@ -122,7 +133,7 @@ int initLogger(const int threadsNum, int privateBuffSize, int sharedBuffSize,
 
 	/* Init shared buffer */
 	sharedBuf.bufSize = sharedBufferSize;
-	sharedBuf.buf = malloc(sharedBufferSize * sizeof(char));
+	sharedBuf.buf = malloc(sharedBufferSize * sizeof(char)); // no need for the *sizeof(char)
 	sharedBuf.lastWrite = 1;
 	pthread_mutex_init(&sharedBuf.lock, NULL);
 
@@ -154,6 +165,7 @@ static int createLogFile() {
 }
 
 /* Register a worker thread at the logger and assign one of the buffers to it */
+// see my comment below regarding using thread_local pointers. Here is where you may set them.
 int registerThread(pthread_t tid) {
 	pthread_mutex_lock(&loggerLock); /* Lock */
 	{
@@ -197,10 +209,10 @@ inline static void drainPrivateBuffers() {
 	int i;
 	int newLastRead;
 	atomic_int lastWrite;
-	bufferData* bd;
+	//bufferData* bd;
 
 	for (i = 0; i < bufferDataArraySize; ++i) {
-		bd = bufferDataArray[i];
+		bufferData* bd = bufferDataArray[i];
 		if (NULL != bd) {
 			/* Atomic load lastWrite, as it is changed by the worker thread */
 			__atomic_load(&bd->lastWrite, &lastWrite, __ATOMIC_SEQ_CST);
@@ -309,6 +321,9 @@ int logMessage(int loggingLevel, char* file, const int line, const char* func,
 	}
 
 	tid = pthread_self();
+
+// why are you calling the getPrivateBuffer each time? this is a long operation, and you can cache the
+// pointer ina thread_local variable. Call it only if that thread_local is 0.
 	bd = getPrivateBuffer(tid);
 
 	/* Don't log if:
@@ -318,6 +333,8 @@ int logMessage(int loggingLevel, char* file, const int line, const char* func,
 	 */
 	//TODO: think if write from unregistered worker threads should be allowed 
 	// - probably a must
+
+	// and again: I would separate the 'isTermiate' case, and not flag it as an error 
 	__atomic_load(&isTerminate, &isTerminateLoc, __ATOMIC_SEQ_CST);
 	if (true == isTerminateLoc || NULL == msg || NULL == bd) {
 		return STATUS_FAILURE;
@@ -376,7 +393,7 @@ inline static void setMsgInfoValues(messageInfo* msgInfo, char* file,
                                     const pthread_t tid, const int loggingLevel) {
 	gettimeofday(&msgInfo->tv, NULL);
 	msgInfo->tm_info = localtime(&msgInfo->tv.tv_sec);
-	msgInfo->millisec = msgInfo->tv.tv_usec;
+	msgInfo->millisec = msgInfo->tv.tv_usec; !!!!!
 	msgInfo->file = file;
 	msgInfo->func = func;
 	msgInfo->line = line;
@@ -483,6 +500,8 @@ inline static bool isWraparoundOverwrite(const int lastRead, const int msgLen,
 }
 
 /* Write sequentially to a designated buffer */
+// a one liner that is used only once. Not sure that warrents a function. It just slows the
+// reading of the code.
 inline static int writeSeq(char* buf, const int lastWrite,
                            const messageInfo* msgInfo, const char* argsBuf) {
 	int msgLen;
@@ -494,18 +513,27 @@ inline static int writeSeq(char* buf, const int lastWrite,
 
 /* Space at the end of the buffer is insufficient - write what is possible to
  * the end of the buffer, the rest write at the beginning of the buffer */
+
+// I don't see a point in inlining this function (even if the compiler does inline it, which
+// I am not sure it does). The func call is negligible compared to what it does, so no point in
+// bloating the code.
 inline static int writeWrap(char* buf, const int lastWrite,
                             const int lenToBufEnd, const messageInfo* msgInfo,
                             const char* argsBuf) {
 	int msgLen;
 	char locBuf[MAX_MSG_LEN];
-
+	// and how do you know that locBuf is long enough? should use sNprintf()
 	msgLen = writeInFormat(locBuf, msgInfo, argsBuf);
 
 	if (lenToBufEnd >= msgLen) {
 		memcpy(buf + lastWrite, locBuf, msgLen);
 		return lastWrite + msgLen;
 	} else {
+	  /*
+	    wouldn't it be simpler and faster if you just skip the remaining of the buffer? suppose the 
+	    first byte of an area is used as a flag, to tell us whether the specific buffer is used, or whether we skip
+	    to the end.
+	   */
 		int bytesRemaining = msgLen - lenToBufEnd;
 		memcpy(buf + lastWrite, locBuf, lenToBufEnd);
 		memcpy(buf, locBuf + lenToBufEnd, bytesRemaining);
@@ -520,7 +548,7 @@ inline static void directWriteToFile(messageInfo* msgInfo, const char* argsBuf) 
 	char locBuf[MAX_MSG_LEN];
 
 	msgInfo->loggingMethod = DIRECT_WRITE;
-	msgLen = writeInFormat(locBuf, msgInfo, argsBuf);
+	msgLen = writeInFormat(locBuf, msgInfo, argsBuf); // why are u using a temp buf in this specific case?
 
 	fwrite(locBuf, 1, msgLen, logFile);
 }
@@ -548,6 +576,7 @@ inline static int writeInFormat(char* buf, const messageInfo* msgInfo,
 	                                "I", /* INFO */
 	                                "D", /* DEBUG */
 	                                "T", /* TRACE */};
+	// if logLevelsIds is just a char - why use a string?
 
 	static char* logMethods[] = { "pb", "sb", "dw" };
 
@@ -556,7 +585,7 @@ inline static int writeInFormat(char* buf, const messageInfo* msgInfo,
 	                "[mid: %x:%.5x] [ll: %s] [lm: %s] [tid: %.8x] [loc: %s:%d:%s] [msg: %s]\n",
 	                (unsigned int) (msgInfo->tv.tv_sec + msgInfo->millisec),
 	                msgInfo->millisec, logLevelsIds[msgInfo->logLevel],
-	                logMethods[msgInfo->loggingMethod],
+	                logMethods[msgInfo->loggingMethod], // why is there a need to have this in the message
 	                (unsigned int) msgInfo->tid, msgInfo->file, msgInfo->line,
 	                msgInfo->func, argsBuf);
 
