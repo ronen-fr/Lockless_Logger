@@ -1,4 +1,4 @@
-By Barak Sasoon
+By Barak Sason
 
 # Lockless_Logger
 A lockless logger utility
