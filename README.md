@@ -1,3 +1,5 @@
+By Barak Sasoon
+
 # Lockless_Logger
 A lockless logger utility
 
